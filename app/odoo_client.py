@@ -61,7 +61,7 @@ class OdooClient:
             row["full_name"] = " / ".join(reversed(path))
         return sorted(rows, key=lambda r: r["full_name"].lower())
 
-    def products(self, query: str = "", limit: int = 50) -> list[dict[str, Any]]:
+    def products(self, query: str = "", limit: int = 50, include_stock: bool = False) -> list[dict[str, Any]]:
         domain: list[Any] = [("sale_ok", "=", True)]
         if query:
             domain += ["|", "|", ("name", "ilike", query), ("default_code", "ilike", query), ("barcode", "ilike", query)]
@@ -74,7 +74,8 @@ class OdooClient:
         )
         for row in rows:
             row["image_url"] = f"{self.url}/web/image/product.template/{row['id']}/image_1920"
-            row["stock_qty"] = self.stock_for_template(row["id"])
+            if include_stock:
+                row["stock_qty"] = self.stock_for_template(row["id"])
         return rows
 
     def product(self, product_id: int) -> dict[str, Any]:
@@ -99,6 +100,7 @@ class OdooClient:
         row = rows[0]
         row["image_url"] = f"{self.url}/web/image/product.template/{row['id']}/image_1920"
         row["stock_qty"] = self.stock_for_template(row["id"])
+        row["stock_source"] = f"Odoo stock.quant, locatia {settings.odoo_stock_location_name}"
         return row
 
     def find_by_sku(self, sku: str) -> dict[str, Any] | None:
@@ -114,6 +116,7 @@ class OdooClient:
         if not rows:
             return None
         rows[0]["stock_qty"] = self.stock_for_template(rows[0]["id"])
+        rows[0]["stock_source"] = f"Odoo stock.quant, locatia {settings.odoo_stock_location_name}"
         rows[0]["image_url"] = f"{self.url}/web/image/product.template/{rows[0]['id']}/image_1920"
         return rows[0]
 

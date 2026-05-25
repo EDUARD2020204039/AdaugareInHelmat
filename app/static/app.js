@@ -1,4 +1,5 @@
 let state = { categories: [], products: [], promo: [], selectedCategory: null };
+let titleRequestSeq = 0;
 const $ = (id) => document.getElementById(id);
 
 function toast(msg) {
@@ -114,7 +115,7 @@ function renderProducts(products = state.products) {
       (p) =>
         `<div class="item" data-product="${p.id}"><strong>${esc(p.name)}</strong><small>${esc(
           p.default_code || "fara cod"
-        )} · stoc ${p.stock_qty ?? 0}</small></div>`
+        )}${p.stock_qty === undefined ? "" : " · stoc Odoo " + p.stock_qty}</small></div>`
     )
     .join("");
   if (!products.length) {
@@ -124,12 +125,15 @@ function renderProducts(products = state.products) {
 }
 
 async function loadProduct(id) {
+  titleRequestSeq += 1;
+  hideSuggestions();
   const p = await api("/api/products/" + id);
   $("productId").value = p.id;
   $("title").value = p.name || "";
   $("sku").value = p.default_code || "";
   $("price").value = p.list_price || "";
   $("quantity").value = p.stock_qty || 0;
+  $("stockSource").textContent = p.stock_source || "Stoc citit din Odoo dupa selectarea produsului";
   $("categoryId").value = (p.public_categ_ids && p.public_categ_ids[0]) || "";
   $("shortDescription").value = p.description_sale || "";
   $("description").value = p.website_description || "";
@@ -156,6 +160,7 @@ $("productSearch").addEventListener(
 
 const titleSearch = debounce(async () => {
   const q = $("title").value.trim();
+  const seq = ++titleRequestSeq;
   $("productId").value = "";
   if (q.length < 2) {
     hideSuggestions();
@@ -163,8 +168,10 @@ const titleSearch = debounce(async () => {
   }
   try {
     const products = await api("/api/products?q=" + encodeURIComponent(q) + "&limit=20");
+    if (seq !== titleRequestSeq || $("title").value.trim() !== q) return;
     renderTitleSuggestions(products);
   } catch (err) {
+    if (seq !== titleRequestSeq) return;
     hideSuggestions();
     status("Autocomplete titlu nu poate citi produsele din Odoo: " + err.message);
   }
@@ -192,9 +199,7 @@ function renderTitleSuggestions(products) {
     .map(
       (p) => `<div class="suggest-item" data-suggest-product="${p.id}">
     <img src="${esc(p.image_url || "")}" alt="">
-    <span><strong>${esc(p.name)}</strong><small>${esc(p.default_code || "fara cod")} · pret ${p.list_price ?? ""} · stoc ${
-        p.stock_qty ?? 0
-      }</small></span>
+    <span><strong>${esc(p.name)}</strong><small>${esc(p.default_code || "fara cod")} · pret ${p.list_price ?? ""}</small></span>
   </div>`
     )
     .join("");
@@ -257,7 +262,7 @@ function card(p) {
   const img = p.image_url || p.image_urls?.[0] || "";
   return `<div class="product-card">${img ? `<img src="${esc(img)}">` : ""}<div class="body"><h3>${esc(
     p.name || p.title || ""
-  )}</h3><div class="price">${p.list_price ?? p.price ?? ""} lei</div><p>${p.stock_qty !== undefined ? "Stoc: " + p.stock_qty : ""}</p><div>${
+  )}</h3><div class="price">${p.list_price ?? p.price ?? ""} lei</div><p>${p.stock_qty !== undefined ? "Stoc Odoo: " + p.stock_qty : ""}</p><div>${
     p.website_description || p.description || ""
   }</div></div></div>`;
 }
