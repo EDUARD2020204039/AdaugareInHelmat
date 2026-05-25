@@ -372,6 +372,14 @@ class OdooClient:
 
         return {"slides": resolved_slides or [], "view_ids": updated_view_ids}
 
+    def promo_slides(self, view_id: int | None = None) -> list[dict[str, Any]]:
+        views = self._promo_views(view_id)
+        for view in views:
+            slides = _extract_promo_slides(view.get("arch_db") or "")
+            if slides:
+                return slides
+        return []
+
     def _promo_views(self, view_id: int | None = None) -> list[dict[str, Any]]:
         target_id = view_id or settings.promo_view_id
         if target_id:

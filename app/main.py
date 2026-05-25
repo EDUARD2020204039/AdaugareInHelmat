@@ -56,7 +56,7 @@ def bootstrap(_: None = Depends(require_admin), client: OdooClient = Depends(odo
         "categories": categories,
         "products": products,
         "swan_configured": SwanClient().configured(),
-        "promo_slides": [slide.model_dump() for slide in load_slides()],
+        "promo_slides": _current_promo_slides(client),
     }
 
 
@@ -240,8 +240,8 @@ def site_scrape(payload: dict, _: None = Depends(require_admin)) -> dict:
 
 
 @app.get("/api/promo")
-def promo_get(_: None = Depends(require_admin)) -> list[dict]:
-    return [slide.model_dump() for slide in load_slides()]
+def promo_get(_: None = Depends(require_admin), client: OdooClient = Depends(odoo)) -> list[dict]:
+    return _current_promo_slides(client)
 
 
 @app.post("/api/promo")
@@ -299,6 +299,15 @@ def _get_product_index(client: OdooClient) -> list[dict]:
 def _promo_upload_index(filename: str, fallback: int) -> int:
     prefix = filename.split("__", 1)[0]
     return int(prefix) if prefix.isdigit() else fallback
+
+
+def _current_promo_slides(client: OdooClient) -> list[dict]:
+    slides = client.promo_slides()
+    if slides:
+        parsed = [PromoSlide(**slide) for slide in slides]
+        save_slides(parsed)
+        return [slide.model_dump() for slide in parsed]
+    return [slide.model_dump() for slide in load_slides()]
 
 
 @app.on_event("startup")
