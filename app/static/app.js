@@ -1,5 +1,6 @@
 ﻿let state = { categories: [], products: [], productIndex: [], promo: [], selectedCategory: null, indexLoaded: false };
 let titleRequestSeq = 0;
+let stockRequestSeq = 0;
 const $ = (id) => document.getElementById(id);
 
 function toast(msg) {
@@ -221,7 +222,7 @@ function renderTitleSuggestions(products) {
     .map(
       (p) => `<div class="suggest-item" data-suggest-product="${p.id}">
     <img src="${esc(p.image_url || "")}" alt="" onerror="this.style.visibility='hidden'">
-    <span><strong>${esc(p.name)}</strong><small>${esc(p.default_code || "fara cod")} - pret ${p.list_price ?? ""}</small></span>
+    <span><strong>${esc(p.name)}</strong><small>${esc(p.default_code || "fara cod")} - pret ${p.list_price ?? ""} - <span data-suggest-stock="${p.id}">stoc...</span></small></span>
   </div>`
     )
     .join("");
@@ -232,10 +233,33 @@ function renderTitleSuggestions(products) {
       hideSuggestions();
       loadProduct(Number(el.dataset.suggestProduct));
     }));
+  hydrateSuggestionStocks(products.map((p) => p.id));
 }
 
 function hideSuggestions() {
   $("titleSuggestions").classList.add("hidden");
+}
+
+async function hydrateSuggestionStocks(ids) {
+  const seq = ++stockRequestSeq;
+  const unique = [...new Set(ids)].slice(0, 25);
+  if (!unique.length) return;
+  try {
+    const data = await api("/api/product-stocks?ids=" + unique.join(","));
+    if (seq !== stockRequestSeq) return;
+    for (const [id, qty] of Object.entries(data.stocks || {})) {
+      document.querySelectorAll(`[data-suggest-stock="${id}"]`).forEach((el) => {
+        el.textContent = `stoc Odoo ${qty}`;
+      });
+    }
+  } catch {
+    if (seq !== stockRequestSeq) return;
+    unique.forEach((id) => {
+      document.querySelectorAll(`[data-suggest-stock="${id}"]`).forEach((el) => {
+        el.textContent = "stoc indisponibil";
+      });
+    });
+  }
 }
 
 function draft() {

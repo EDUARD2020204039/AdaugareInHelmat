@@ -87,6 +87,22 @@ def product(product_id: int, _: None = Depends(require_admin), client: OdooClien
     return client.product(product_id)
 
 
+@app.get("/api/product-stocks")
+def product_stocks(
+    ids: str,
+    _: None = Depends(require_admin),
+    client: OdooClient = Depends(odoo),
+) -> dict:
+    product_ids = []
+    for raw in ids.split(","):
+        try:
+            product_ids.append(int(raw.strip()))
+        except ValueError:
+            continue
+    product_ids = product_ids[:50]
+    return {"stocks": client.stocks_for_templates(product_ids), "source": "Odoo stock.quant, locatia WH/Stock"}
+
+
 @app.get("/api/products/{product_id}/image")
 def product_image(product_id: int, client: OdooClient = Depends(odoo)) -> Response:
     image = client.product_image(product_id)

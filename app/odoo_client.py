@@ -146,6 +146,40 @@ class OdooClient:
         except Exception:
             return 0.0
 
+    def stocks_for_templates(self, product_tmpl_ids: list[int]) -> dict[str, float]:
+        if not product_tmpl_ids:
+            return {}
+        templates = self.search_read(
+            "product.template",
+            [("id", "in", product_tmpl_ids)],
+            ["id", "product_variant_id"],
+            limit=len(product_tmpl_ids),
+        )
+        variant_to_template: dict[int, int] = {}
+        for tmpl in templates:
+            variant = tmpl.get("product_variant_id")
+            if variant:
+                variant_to_template[int(variant[0])] = int(tmpl["id"])
+        result = {str(pid): 0.0 for pid in product_tmpl_ids}
+        if not variant_to_template:
+            return result
+        location_id = self.stock_location_id()
+        quants = self.search_read(
+            "stock.quant",
+            [("product_id", "in", list(variant_to_template)), ("location_id", "=", location_id)],
+            ["product_id", "quantity"],
+            limit=5000,
+        )
+        for quant in quants:
+            product = quant.get("product_id")
+            if not product:
+                continue
+            variant_id = int(product[0])
+            tmpl_id = variant_to_template.get(variant_id)
+            if tmpl_id:
+                result[str(tmpl_id)] = result.get(str(tmpl_id), 0.0) + float(quant.get("quantity") or 0)
+        return result
+
     def product_image(self, product_tmpl_id: int) -> tuple[bytes, str] | None:
         rows = self.search_read("product.template", [("id", "=", product_tmpl_id)], ["image_512"], limit=1)
         if not rows or not rows[0].get("image_512"):
