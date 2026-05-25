@@ -246,7 +246,7 @@ class OdooClient:
 
     def save_product(self, draft: ProductDraft, image_files: list[Path] | None = None) -> dict[str, Any]:
         category_id = self.ensure_public_category(draft)
-        current = self.product(draft.product_id) if draft.product_id else self.find_by_sku(draft.sku or "")
+        current = self.product(draft.product_id, include_stock=False) if draft.product_id else self.find_by_sku(draft.sku or "")
         vals: dict[str, Any] = {
             "name": draft.title.strip(),
             "sale_ok": True,
@@ -283,10 +283,18 @@ class OdooClient:
                     self.call("product.template", "write", [product_id], {"image_1920": image_data})
                 else:
                     self._create_product_image(product_id, Path(urlparse(url).path).name or "image.jpg", image_data)
+        stock_error = None
         if draft.quantity is not None:
-            self.set_stock(product_id, float(draft.quantity))
+            try:
+                self.set_stock(product_id, float(draft.quantity))
+            except Exception as exc:
+                stock_error = str(exc)
 
-        saved = self.product(product_id)
+        saved = self.product(product_id, include_stock=False)
+        if draft.quantity is not None:
+            saved["stock_qty"] = float(draft.quantity)
+        if stock_error:
+            saved["stock_error"] = stock_error
         saved["action"] = action
         return saved
 

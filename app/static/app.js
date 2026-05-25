@@ -328,14 +328,22 @@ $("previewBtn").onclick = async () => {
 
 $("productForm").onsubmit = async (ev) => {
   ev.preventDefault();
+  const mode = $("productId").value ? "update" : "create";
+  $("preview").innerHTML = card(draft()) + `<div class="diff">Mod ${mode}: se trimite catre site...</div>`;
   const fd = new FormData();
   fd.append("draft_json", JSON.stringify(draft()));
   [...$("images").files].forEach((f) => fd.append("images", f));
-  const res = await api("/api/apply", { method: "POST", body: fd });
-  $("productId").value = res.product.id;
-  $("preview").innerHTML =
-    card(res.product) + `<div class="diff">Mod ${res.product.action === "updated" ? "update" : "create"}: succes transmis catre site</div>`;
-  toast("Produs salvat");
+  try {
+    const res = await api("/api/apply", { method: "POST", body: fd });
+    $("productId").value = res.product.id;
+    const savedMode = res.product.action === "updated" ? "update" : "create";
+    const extra = res.product.stock_error ? `<div class="diff">Produs salvat, dar stocul nu s-a putut actualiza: ${esc(res.product.stock_error)}</div>` : "";
+    $("preview").innerHTML = card(res.product) + `<div class="diff">Mod ${savedMode}: succes la trimitere pe site</div>` + extra;
+    toast("Produs salvat");
+  } catch (err) {
+    $("preview").innerHTML = card(draft()) + `<div class="diff">Eroare la trimitere: ${esc(err.message)}</div>`;
+    toast("Eroare la salvare");
+  }
 };
 
 function renderPreview(res) {
