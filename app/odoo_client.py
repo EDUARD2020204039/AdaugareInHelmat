@@ -288,7 +288,7 @@ class OdooClient:
             try:
                 self.set_stock(product_id, float(draft.quantity))
             except Exception as exc:
-                stock_error = str(exc)
+                stock_error = _friendly_odoo_error(exc)
 
         saved = self.product(product_id, include_stock=False)
         if draft.quantity is not None:
@@ -299,7 +299,7 @@ class OdooClient:
         return saved
 
     def set_stock(self, product_tmpl_id: int, quantity: float) -> None:
-        tmpl = self.product(product_tmpl_id)
+        tmpl = self.product(product_tmpl_id, include_stock=False)
         variant = tmpl.get("product_variant_id")
         if not variant:
             return
@@ -320,7 +320,12 @@ class OdooClient:
         else:
             vals.update({"product_id": variant_id, "location_id": location_id})
             quant_id = self.call("stock.quant", "create", vals)
-        self.call("stock.quant", "action_apply_inventory", [quant_id])
+        try:
+            self.call("stock.quant", "action_apply_inventory", [quant_id])
+        except xmlrpc.client.Fault as exc:
+            if "cannot marshal None unless allow_none is enabled" in str(exc):
+                return
+            raise
 
     def upload_attachment(self, path: Path, name: str | None = None) -> int:
         mimetype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
@@ -405,3 +410,11 @@ def _guess_image_mimetype(data: bytes) -> str:
     if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
         return "image/webp"
     return "image/png"
+
+
+def _friendly_odoo_error(exc: Exception) -> str:
+    message = str(exc)
+    if "cannot marshal None unless allow_none is enabled" in message:
+        return "Odoo a aplicat comanda, dar nu a confirmat raspunsul XML-RPC pentru stoc."
+    first_line = message.replace("\\n", "\n").strip().splitlines()[0] if message.strip() else ""
+    return first_line[:240] or "Eroare necunoscuta la actualizarea stocului."
