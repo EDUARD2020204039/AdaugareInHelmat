@@ -1,4 +1,4 @@
-let state = { categories: [], products: [], promo: [], selectedCategory: null };
+﻿let state = { categories: [], products: [], productIndex: [], promo: [], selectedCategory: null, indexLoaded: false };
 let titleRequestSeq = 0;
 const $ = (id) => document.getElementById(id);
 
@@ -50,11 +50,13 @@ async function init() {
     $("dbBadge").textContent = data.db;
     state.categories = data.categories || [];
     state.products = data.products || [];
+    state.productIndex = state.products;
     state.promo = data.promo_slides || [];
     renderCategories();
     renderProducts();
     fillCategorySelect();
     renderPromo();
+    loadProductIndex();
   } catch (e) {
     status(
       "Nu pot incarca datele din Odoo: " +
@@ -115,13 +117,44 @@ function renderProducts(products = state.products) {
       (p) =>
         `<div class="item" data-product="${p.id}"><strong>${esc(p.name)}</strong><small>${esc(
           p.default_code || "fara cod"
-        )}${p.stock_qty === undefined ? "" : " · stoc Odoo " + p.stock_qty}</small></div>`
+        )}${p.stock_qty === undefined ? "" : " - stoc Odoo " + p.stock_qty}</small></div>`
     )
     .join("");
   if (!products.length) {
     $("productList").innerHTML = '<div class="mini">Scrie minim 2 caractere ca sa caut in produsele de pe site.</div>';
   }
   document.querySelectorAll("[data-product]").forEach((el) => (el.onclick = () => loadProduct(Number(el.dataset.product))));
+}
+
+async function loadProductIndex() {
+  $("productCount").textContent = `${state.products.length} produse afisate - se incarca indexul complet...`;
+  try {
+    const data = await api("/api/product-index");
+    state.productIndex = data.products || [];
+    state.indexLoaded = true;
+    $("productCount").textContent = `${state.productIndex.length} produse in index`;
+    const q = $("productSearch").value.trim();
+    renderProducts(q.length >= 2 ? localProductSearch(q, 120) : state.productIndex.slice(0, 120));
+  } catch (err) {
+    status("Nu pot incarca indexul complet de produse: " + err.message);
+  }
+}
+
+function localProductSearch(query, limit = 40) {
+  const q = normalize(query);
+  if (!q) return state.productIndex.slice(0, limit);
+  const tokens = q.split(" ").filter(Boolean);
+  const scored = [];
+  for (const product of state.productIndex) {
+    const hay = normalize(`${product.name || ""} ${product.default_code || ""}`);
+    if (!tokens.every((token) => hay.includes(token))) continue;
+    let score = 0;
+    if (normalize(product.name || "").startsWith(q)) score += 60;
+    if (hay.includes(q)) score += 30;
+    score -= Math.min(hay.length, 240) / 240;
+    scored.push([score, product]);
+  }
+  return scored.sort((a, b) => b[0] - a[0] || String(a[1].name).localeCompare(String(b[1].name))).slice(0, limit).map((row) => row[1]);
 }
 
 async function loadProduct(id) {
@@ -144,18 +177,14 @@ async function loadProduct(id) {
 $("categorySearch").addEventListener("input", renderCategories);
 $("productSearch").addEventListener(
   "input",
-  debounce(async (e) => {
+  debounce((e) => {
     const q = e.target.value.trim();
     if (q.length < 2) {
-      renderProducts(state.products);
+      renderProducts((state.indexLoaded ? state.productIndex : state.products).slice(0, 120));
       return;
     }
-    try {
-      renderProducts(await api("/api/products?q=" + encodeURIComponent(q) + "&limit=120"));
-    } catch (err) {
-      status("Cautarea produselor a esuat: " + err.message);
-    }
-  })
+    renderProducts(localProductSearch(q, 120));
+  }, 80)
 );
 
 const titleSearch = debounce(async () => {
@@ -166,16 +195,9 @@ const titleSearch = debounce(async () => {
     hideSuggestions();
     return;
   }
-  try {
-    const products = await api("/api/products?q=" + encodeURIComponent(q) + "&limit=20");
-    if (seq !== titleRequestSeq || $("title").value.trim() !== q) return;
-    renderTitleSuggestions(products);
-  } catch (err) {
-    if (seq !== titleRequestSeq) return;
-    hideSuggestions();
-    status("Autocomplete titlu nu poate citi produsele din Odoo: " + err.message);
-  }
-}, 180);
+  if (seq !== titleRequestSeq || $("title").value.trim() !== q) return;
+  renderTitleSuggestions(localProductSearch(q, 25));
+}, 70);
 
 $("title").addEventListener("input", titleSearch);
 $("title").addEventListener("focus", () => {
@@ -198,8 +220,8 @@ function renderTitleSuggestions(products) {
   box.innerHTML = products
     .map(
       (p) => `<div class="suggest-item" data-suggest-product="${p.id}">
-    <img src="${esc(p.image_url || "")}" alt="">
-    <span><strong>${esc(p.name)}</strong><small>${esc(p.default_code || "fara cod")} · pret ${p.list_price ?? ""}</small></span>
+    <img src="${esc(p.image_url || "")}" alt="" onerror="this.style.visibility='hidden'">
+    <span><strong>${esc(p.name)}</strong><small>${esc(p.default_code || "fara cod")} - pret ${p.list_price ?? ""}</small></span>
   </div>`
     )
     .join("");
@@ -346,4 +368,14 @@ function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 }
 
+function normalize(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 init();
+

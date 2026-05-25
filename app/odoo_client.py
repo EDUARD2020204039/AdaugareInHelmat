@@ -1,4 +1,5 @@
 import base64
+import binascii
 import mimetypes
 import re
 import xmlrpc.client
@@ -78,6 +79,18 @@ class OdooClient:
                 row["stock_qty"] = self.stock_for_template(row["id"])
         return rows
 
+    def product_index(self, limit: int = 20000) -> list[dict[str, Any]]:
+        rows = self.search_read(
+            "product.template",
+            [("sale_ok", "=", True)],
+            ["id", "name", "default_code", "list_price", "public_categ_ids", "website_published"],
+            limit=limit,
+            order="name",
+        )
+        for row in rows:
+            row["image_url"] = f"/api/products/{row['id']}/image"
+        return rows
+
     def product(self, product_id: int) -> dict[str, Any]:
         rows = self.search_read(
             "product.template",
@@ -132,6 +145,16 @@ class OdooClient:
             return float(sum(q.get("quantity") or 0 for q in quants))
         except Exception:
             return 0.0
+
+    def product_image(self, product_tmpl_id: int) -> tuple[bytes, str] | None:
+        rows = self.search_read("product.template", [("id", "=", product_tmpl_id)], ["image_512"], limit=1)
+        if not rows or not rows[0].get("image_512"):
+            return None
+        try:
+            data = base64.b64decode(rows[0]["image_512"])
+        except (binascii.Error, TypeError):
+            return None
+        return data, _guess_image_mimetype(data)
 
     def stock_location_id(self) -> int:
         rows = self.search_read(
@@ -316,3 +339,15 @@ class OdooClient:
             return base64.b64encode(response.content).decode("ascii")
         except Exception:
             return None
+
+
+def _guess_image_mimetype(data: bytes) -> str:
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+        return "image/gif"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/png"

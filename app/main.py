@@ -1,10 +1,12 @@
 import json
 import shutil
+import threading
+import time
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .excel_importer import parse_excel
@@ -17,6 +19,9 @@ from .swan_client import SwanClient
 
 app = FastAPI(title="AdaugareInHelmat", version="1.0.0")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "app" / "static"), name="static")
+
+_PRODUCT_INDEX_CACHE: dict = {"at": 0.0, "products": []}
+_PRODUCT_INDEX_TTL = 900
 
 
 def require_admin(x_admin_token: Annotated[str | None, Header()] = None) -> None:
@@ -71,9 +76,24 @@ def products(
     return client.products(q, limit=max(1, min(limit, 500)), include_stock=include_stock)
 
 
+@app.get("/api/product-index")
+def product_index(_: None = Depends(require_admin), client: OdooClient = Depends(odoo)) -> dict:
+    products = _get_product_index(client)
+    return {"count": len(products), "products": products}
+
+
 @app.get("/api/products/{product_id}")
 def product(product_id: int, _: None = Depends(require_admin), client: OdooClient = Depends(odoo)) -> dict:
     return client.product(product_id)
+
+
+@app.get("/api/products/{product_id}/image")
+def product_image(product_id: int, client: OdooClient = Depends(odoo)) -> Response:
+    image = client.product_image(product_id)
+    if not image:
+        raise HTTPException(status_code=404, detail="Produs fara imagine")
+    data, mimetype = image
+    return Response(content=data, media_type=mimetype, headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.get("/api/swan/stock/{sku}")
@@ -231,3 +251,25 @@ async def _save_uploads(files: list[UploadFile]) -> list[Path]:
         if file.filename:
             paths.append(await _save_upload(file))
     return paths
+
+
+def _get_product_index(client: OdooClient) -> list[dict]:
+    now = time.time()
+    products = _PRODUCT_INDEX_CACHE.get("products") or []
+    if products and now - float(_PRODUCT_INDEX_CACHE.get("at") or 0) < _PRODUCT_INDEX_TTL:
+        return products
+    products = client.product_index()
+    _PRODUCT_INDEX_CACHE["products"] = products
+    _PRODUCT_INDEX_CACHE["at"] = now
+    return products
+
+
+@app.on_event("startup")
+def warm_product_index() -> None:
+    def run() -> None:
+        try:
+            _get_product_index(OdooClient())
+        except Exception:
+            pass
+
+    threading.Thread(target=run, daemon=True).start()
