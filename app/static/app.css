@@ -12,6 +12,7 @@ nav button.active,nav button:last-child{background:var(--green);color:#fff}
 main{display:grid;grid-template-columns:330px minmax(0,1fr);gap:16px;padding:16px}
 .status{margin:14px 16px 0;padding:12px 14px;border:1px solid #f0c36b;background:#fff8e6;color:#5d4200;border-radius:8px;font-weight:800}
 .status.hidden{display:none}
+.sync-status{margin:10px 16px 0;color:var(--muted);font-size:13px;font-weight:800}
 aside{display:flex;flex-direction:column;gap:16px;min-width:0}
 .workspace{min-width:0}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;box-shadow:0 8px 22px rgba(20,50,34,.06)}

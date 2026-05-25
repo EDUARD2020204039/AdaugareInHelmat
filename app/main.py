@@ -2,8 +2,10 @@ import json
 import shutil
 import threading
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
@@ -14,7 +16,7 @@ from .models import ProductDraft, PromoSlide
 from .odoo_client import OdooClient, OdooError
 from .promo_store import load_slides, save_slides
 from .scraper import correlate_site_with_codes, scrape_product_page
-from .settings import BASE_DIR, UPLOAD_DIR, settings
+from .settings import BASE_DIR, DATA_DIR, UPLOAD_DIR, settings
 from .swan_client import SwanClient
 
 app = FastAPI(title="AdaugareInHelmat", version="1.0.0")
@@ -22,6 +24,8 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "app" / "static"), name="s
 
 _PRODUCT_INDEX_CACHE: dict = {"at": 0.0, "products": []}
 _PRODUCT_INDEX_TTL = 900
+_SWAN_SYNC_LOCK = threading.Lock()
+_SWAN_SYNC_STATUS_FILE = DATA_DIR / "swan_sync_status.json"
 
 
 def require_admin(x_admin_token: Annotated[str | None, Header()] = None) -> None:
@@ -136,20 +140,21 @@ def swan_stock(sku: str, _: None = Depends(require_admin)) -> dict:
 
 @app.post("/api/swan/sync")
 def sync_swan(_: None = Depends(require_admin), client: OdooClient = Depends(odoo)) -> dict:
-    swan = SwanClient()
-    items = swan.fetch_products()
-    matched = []
-    missing = []
-    for item in items:
-        product = client.find_by_sku(item.sku)
-        row = item.model_dump()
-        if product:
-            row["odoo_product_id"] = product["id"]
-            row["odoo_name"] = product["name"]
-            matched.append(row)
-        else:
-            missing.append(row)
-    return {"fetched": len(items), "matched": matched[:500], "missing": missing[:500]}
+    return _sync_swan_to_odoo(client, source="manual")
+
+
+@app.get("/api/swan/status")
+def swan_status(_: None = Depends(require_admin)) -> dict:
+    status = _load_swan_sync_status()
+    next_run = _next_swan_sync_run().isoformat() if settings.swan_auto_sync_enabled else None
+    return {
+        "auto_enabled": settings.swan_auto_sync_enabled,
+        "hour": settings.swan_auto_sync_hour,
+        "minute": settings.swan_auto_sync_minute,
+        "timezone": settings.swan_auto_sync_timezone,
+        "next_run": next_run,
+        "last": status,
+    }
 
 
 @app.post("/api/preview")
@@ -310,12 +315,139 @@ def _current_promo_slides(client: OdooClient) -> list[dict]:
     return [slide.model_dump() for slide in load_slides()]
 
 
+def _sync_swan_to_odoo(client: OdooClient, source: str) -> dict:
+    if not _SWAN_SYNC_LOCK.acquire(blocking=False):
+        return {"ok": False, "running": True, "message": "Sincronizarea Swan ruleaza deja."}
+    started_at = _now_tz().isoformat()
+    summary: dict = {
+        "ok": False,
+        "source": source,
+        "started_at": started_at,
+        "finished_at": None,
+        "fetched": 0,
+        "matched": [],
+        "missing": [],
+        "updated": [],
+        "errors": [],
+    }
+    try:
+        swan = SwanClient()
+        if not swan.configured():
+            summary["message"] = "Swan nu este configurat: lipsesc SWAN_API_URL sau SWAN_BEARER_TOKEN."
+            return summary
+
+        items = swan.fetch_products()
+        summary["fetched"] = len(items)
+        products = client.products_by_skus([item.sku for item in items])
+        for item in items:
+            product = products.get(item.sku)
+            row = item.model_dump()
+            if not product:
+                summary["missing"].append(row)
+                continue
+
+            product_id = int(product["id"])
+            variant = product.get("product_variant_id")
+            variant_id = int(variant[0]) if isinstance(variant, list) and variant else None
+            row["odoo_product_id"] = product_id
+            row["odoo_name"] = product.get("name")
+            summary["matched"].append(row)
+            try:
+                changes = []
+                if item.price > 0 and float(product.get("list_price") or 0) != float(item.price):
+                    client.update_price(product_id, item.price)
+                    changes.append("pret")
+                client.set_stock(product_id, item.quantity, variant_id=variant_id)
+                changes.append("stoc")
+                row["changes"] = changes
+                summary["updated"].append(row)
+            except Exception as exc:
+                row["error"] = str(exc).splitlines()[0][:240]
+                summary["errors"].append(row)
+
+        summary["ok"] = not summary["errors"]
+        return summary
+    except Exception as exc:
+        summary["message"] = str(exc).splitlines()[0][:240]
+        return summary
+    finally:
+        summary["finished_at"] = _now_tz().isoformat()
+        summary["matched_count"] = len(summary["matched"])
+        summary["missing_count"] = len(summary["missing"])
+        summary["updated_count"] = len(summary["updated"])
+        summary["error_count"] = len(summary["errors"])
+        summary["matched"] = summary["matched"][:500]
+        summary["missing"] = summary["missing"][:500]
+        summary["updated"] = summary["updated"][:500]
+        summary["errors"] = summary["errors"][:100]
+        _save_swan_sync_status(summary)
+        _PRODUCT_INDEX_CACHE["products"] = []
+        _PRODUCT_INDEX_CACHE["at"] = 0.0
+        _SWAN_SYNC_LOCK.release()
+
+
+def _now_tz() -> datetime:
+    return datetime.now(ZoneInfo(settings.swan_auto_sync_timezone))
+
+
+def _next_swan_sync_run(now: datetime | None = None) -> datetime:
+    now = now or _now_tz()
+    target = now.replace(
+        hour=max(0, min(23, settings.swan_auto_sync_hour)),
+        minute=max(0, min(59, settings.swan_auto_sync_minute)),
+        second=0,
+        microsecond=0,
+    )
+    if target <= now:
+        target += timedelta(days=1)
+    return target
+
+
+def _swan_sync_scheduler() -> None:
+    while True:
+        if not settings.swan_auto_sync_enabled:
+            time.sleep(300)
+            continue
+        next_run = _next_swan_sync_run()
+        while True:
+            seconds = (next_run - _now_tz()).total_seconds()
+            if seconds <= 0:
+                break
+            time.sleep(min(seconds, 300))
+        try:
+            _sync_swan_to_odoo(OdooClient(), source="auto")
+        except Exception as exc:
+            _save_swan_sync_status(
+                {
+                    "ok": False,
+                    "source": "auto",
+                    "started_at": _now_tz().isoformat(),
+                    "finished_at": _now_tz().isoformat(),
+                    "message": str(exc).splitlines()[0][:240],
+                }
+            )
+
+
+def _load_swan_sync_status() -> dict | None:
+    if not _SWAN_SYNC_STATUS_FILE.exists():
+        return None
+    try:
+        return json.loads(_SWAN_SYNC_STATUS_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _save_swan_sync_status(status: dict) -> None:
+    _SWAN_SYNC_STATUS_FILE.write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 @app.on_event("startup")
-def warm_product_index() -> None:
-    def run() -> None:
+def startup_workers() -> None:
+    def warm_index() -> None:
         try:
             _get_product_index(OdooClient())
         except Exception:
             pass
 
-    threading.Thread(target=run, daemon=True).start()
+    threading.Thread(target=warm_index, daemon=True).start()
+    threading.Thread(target=_swan_sync_scheduler, daemon=True).start()

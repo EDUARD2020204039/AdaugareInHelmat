@@ -136,6 +136,42 @@ class OdooClient:
         rows[0]["image_url"] = f"/api/products/{rows[0]['id']}/image"
         return rows[0]
 
+    def products_by_skus(self, skus: list[str]) -> dict[str, dict[str, Any]]:
+        clean_skus = list(dict.fromkeys(sku.strip() for sku in skus if sku and sku.strip()))
+        if not clean_skus:
+            return {}
+        fields = ["id", "name", "default_code", "list_price", "public_categ_ids", "website_published", "product_variant_id"]
+        rows = self.search_read("product.template", [("default_code", "in", clean_skus)], fields, limit=len(clean_skus))
+        by_sku = {row["default_code"]: row for row in rows if row.get("default_code")}
+        missing_skus = [sku for sku in clean_skus if sku not in by_sku]
+        if not missing_skus:
+            return by_sku
+
+        variants = self.search_read(
+            "product.product",
+            [("default_code", "in", missing_skus)],
+            ["default_code", "product_tmpl_id"],
+            limit=len(missing_skus),
+        )
+        template_ids = []
+        for variant in variants:
+            tmpl = variant.get("product_tmpl_id")
+            if tmpl:
+                template_ids.append(int(tmpl[0]))
+        templates = {}
+        if template_ids:
+            template_rows = self.search_read("product.template", [("id", "in", list(set(template_ids)))], fields, limit=len(set(template_ids)))
+            templates = {int(row["id"]): row for row in template_rows}
+        for variant in variants:
+            sku = variant.get("default_code")
+            tmpl = variant.get("product_tmpl_id")
+            if sku and tmpl and int(tmpl[0]) in templates:
+                by_sku[sku] = templates[int(tmpl[0])]
+        return by_sku
+
+    def update_price(self, product_tmpl_id: int, price: float) -> None:
+        self.call("product.template", "write", [product_tmpl_id], {"list_price": float(price)})
+
     def stock_for_template(self, product_tmpl_id: int) -> float:
         try:
             tmpl = self.search_read("product.template", [("id", "=", product_tmpl_id)], ["product_variant_id"], limit=1)
@@ -310,12 +346,13 @@ class OdooClient:
         saved["action"] = action
         return saved
 
-    def set_stock(self, product_tmpl_id: int, quantity: float) -> None:
-        tmpl = self.product(product_tmpl_id, include_stock=False)
-        variant = tmpl.get("product_variant_id")
-        if not variant:
-            return
-        variant_id = variant[0] if isinstance(variant, list) else variant
+    def set_stock(self, product_tmpl_id: int, quantity: float, variant_id: int | None = None) -> None:
+        if variant_id is None:
+            tmpl = self.product(product_tmpl_id, include_stock=False)
+            variant = tmpl.get("product_variant_id")
+            if not variant:
+                return
+            variant_id = variant[0] if isinstance(variant, list) else variant
         location_id = self.stock_location_id()
         domain = [
             ("product_id", "=", variant_id),

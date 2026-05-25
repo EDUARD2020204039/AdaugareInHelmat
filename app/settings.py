@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     swan_bearer_token: str = ""
     swan_push_api_url: str = ""
     swan_push_bearer_token: str = ""
+    swan_auto_sync_enabled: bool = True
+    swan_auto_sync_hour: int = 3
+    swan_auto_sync_minute: int = 0
+    swan_auto_sync_timezone: str = "Europe/Bucharest"
 
     admin_token: str = ""
     promo_view_id: int | None = None

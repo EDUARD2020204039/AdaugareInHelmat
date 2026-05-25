@@ -59,6 +59,7 @@ async function init() {
     fillCategorySelect();
     renderPromo();
     loadProductIndex();
+    loadSwanStatus();
   } catch (e) {
     status(
       "Nu pot incarca datele din Odoo: " +
@@ -394,10 +395,30 @@ $("siteScrapeBtn").onclick = async () => {
 };
 
 $("syncSwanBtn").onclick = async () => {
+  $("swanStatus").textContent = "Swan automat: sincronizare manuala in curs...";
   const res = await api("/api/swan/sync", { method: "POST" });
-  toast(`Swan: ${res.fetched} produse, ${res.matched.length} gasite, ${res.missing.length} lipsa`);
+  const updated = res.updated_count ?? res.updated?.length ?? 0;
+  const missing = res.missing_count ?? res.missing?.length ?? 0;
+  const errors = res.error_count ?? res.errors?.length ?? 0;
+  toast(`Swan: ${res.fetched} produse, ${updated} actualizate, ${missing} lipsa, ${errors} erori`);
+  loadSwanStatus();
   console.log(res);
 };
+
+async function loadSwanStatus() {
+  try {
+    const res = await api("/api/swan/status");
+    const next = res.next_run ? new Date(res.next_run).toLocaleString("ro-RO") : "oprit";
+    const last = res.last?.finished_at ? new Date(res.last.finished_at).toLocaleString("ro-RO") : "inca nu a rulat";
+    const updated = res.last?.updated_count ?? 0;
+    const errors = res.last?.error_count ?? 0;
+    $("swanStatus").textContent = `Swan automat: ${res.auto_enabled ? "pornit" : "oprit"} la ${String(res.hour).padStart(2, "0")}:${String(
+      res.minute
+    ).padStart(2, "0")} ${res.timezone}. Urmatoarea rulare: ${next}. Ultima: ${last}, ${updated} actualizate, ${errors} erori.`;
+  } catch (err) {
+    $("swanStatus").textContent = "Swan automat: status indisponibil";
+  }
+}
 
 function renderPromo() {
   $("promoSlides").innerHTML = state.promo
