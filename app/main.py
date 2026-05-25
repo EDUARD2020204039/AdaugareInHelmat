@@ -250,13 +250,15 @@ async def promo_apply(
 ) -> dict:
     slides = [PromoSlide(**item) for item in json.loads(slides_json)]
     image_paths = await _save_uploads(images)
-    for idx, path in enumerate(image_paths):
+    for fallback_idx, path in enumerate(image_paths):
+        idx = _promo_upload_index(path.name, fallback_idx)
         if idx < len(slides):
             slides[idx].attachment_id = client.upload_attachment(path, slides[idx].title)
             slides[idx].image_url = None
-    save_slides(slides)
-    client.update_promo_view([slide.model_dump() for slide in slides])
-    return {"ok": True, "slides": [slide.model_dump() for slide in slides]}
+    result = client.update_promo_view([slide.model_dump() for slide in slides])
+    resolved_slides = [PromoSlide(**item) for item in result["slides"]]
+    save_slides(resolved_slides)
+    return {"ok": True, "slides": [slide.model_dump() for slide in resolved_slides], "view_ids": result["view_ids"]}
 
 
 async def _save_upload(file: UploadFile) -> Path:
@@ -283,6 +285,11 @@ def _get_product_index(client: OdooClient) -> list[dict]:
     _PRODUCT_INDEX_CACHE["products"] = products
     _PRODUCT_INDEX_CACHE["at"] = now
     return products
+
+
+def _promo_upload_index(filename: str, fallback: int) -> int:
+    prefix = filename.split("__", 1)[0]
+    return int(prefix) if prefix.isdigit() else fallback
 
 
 @app.on_event("startup")

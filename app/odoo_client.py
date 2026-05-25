@@ -1,5 +1,6 @@
 import base64
 import binascii
+import html
 import mimetypes
 import re
 import xmlrpc.client
@@ -8,6 +9,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import requests
+from bs4 import BeautifulSoup
 
 from .models import ProductDraft
 from .settings import settings
@@ -341,40 +343,41 @@ class OdooClient:
             },
         )
 
-    def update_promo_view(self, slides: list[dict[str, Any]], view_id: int | None = None) -> None:
+    def update_promo_view(self, slides: list[dict[str, Any]], view_id: int | None = None) -> dict[str, Any]:
+        views = self._promo_views(view_id)
+        if not views:
+            raise OdooError("Nu am gasit view-ul homepage cu reclamele Helmat.")
+
+        resolved_slides: list[dict[str, Any]] | None = None
+        updated_view_ids: list[int] = []
+        for view in views:
+            arch = view.get("arch_db") or ""
+            existing = _extract_promo_slides(arch)
+            resolved = _resolve_promo_slides(slides, existing)
+            new_arch = _replace_promo_markup(arch, resolved)
+            self.call("ir.ui.view", "write", [view["id"]], {"arch_db": new_arch})
+            updated_view_ids.append(view["id"])
+            if resolved_slides is None:
+                resolved_slides = resolved
+
+        return {"slides": resolved_slides or [], "view_ids": updated_view_ids}
+
+    def _promo_views(self, view_id: int | None = None) -> list[dict[str, Any]]:
         target_id = view_id or settings.promo_view_id
-        if not target_id:
-            raise OdooError("Seteaza PROMO_VIEW_ID ca sa pot modifica reclama din Odoo.")
-        view = self.call("ir.ui.view", "read", [target_id], fields=["arch_db"])[0]
-        slides_html = []
-        indicators = []
-        for idx, slide in enumerate(slides):
-            active = "active" if idx == 0 else ""
-            img = slide.get("image_url") or f"/web/image/ir.attachment/{slide['attachment_id']}/datas"
-            link = slide.get("link") or "/shop"
-            title = slide.get("title") or f"Promotie {idx + 1}"
-            slides_html.append(
-                f'<div class="carousel-item {active}"><a href="{link}" class="helmat-promo-carousel__link">'
-                f'<img src="{img}" alt="{title}" class="d-block w-100" loading="lazy"/></a></div>'
-            )
-            indicators.append(
-                f'<button type="button" data-bs-target="#helmatPromoCarousel" data-bs-slide-to="{idx}" '
-                f'class="{active}" aria-label="Slide {idx + 1}"/>'
-            )
-        arch = view["arch_db"]
-        arch = re.sub(
-            r'(<div class="carousel-inner">).*?(</div>\s*<button class="carousel-control-prev")',
-            r"\1" + "\n".join(slides_html) + r"\2",
-            arch,
-            flags=re.S,
+        if target_id:
+            return self.call("ir.ui.view", "read", [target_id], fields=["id", "name", "key", "arch_db"])
+        rows = self.search_read(
+            "ir.ui.view",
+            [("arch_db", "ilike", "helmatPromoCarousel")],
+            ["id", "name", "key", "arch_db"],
+            limit=50,
         )
-        arch = re.sub(
-            r'(<div class="carousel-indicators">).*?(</div>\s*</div>\s*</div>\s*</section>)',
-            r"\1" + "\n".join(indicators) + r"\2",
-            arch,
-            flags=re.S,
-        )
-        self.call("ir.ui.view", "write", [target_id], {"arch_db": arch})
+        preferred = [
+            row
+            for row in rows
+            if row.get("key") == "haba_demo_store.homepage_inherit" or row.get("name") == "Helmat Homepage"
+        ]
+        return preferred or rows[:1]
 
     def _add_extra_images(self, product_id: int, files: list[Path]) -> None:
         for path in files:
@@ -410,6 +413,95 @@ def _guess_image_mimetype(data: bytes) -> str:
     if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
         return "image/webp"
     return "image/png"
+
+
+def _extract_promo_slides(arch: str) -> list[dict[str, Any]]:
+    soup = BeautifulSoup(arch or "", "html.parser")
+    carousel = soup.find(id="helmatPromoCarousel")
+    if not carousel:
+        return []
+    slides = []
+    for idx, item in enumerate(carousel.select(".carousel-item")):
+        link = item.find("a")
+        image = item.find("img")
+        src = image.get("src") if image else None
+        slide = {
+            "title": image.get("alt") if image else f"Promotie {idx + 1}",
+            "link": link.get("href") if link else "/shop",
+            "image_url": src,
+            "attachment_id": _attachment_id_from_url(src),
+        }
+        slides.append(slide)
+    return slides
+
+
+def _resolve_promo_slides(slides: list[dict[str, Any]], existing: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    resolved = []
+    for idx, slide in enumerate(slides):
+        old = existing[idx] if idx < len(existing) else {}
+        new_attachment_id = slide.get("attachment_id")
+        image_url = slide.get("image_url") or old.get("image_url")
+        attachment_id = new_attachment_id or _attachment_id_from_url(image_url) or old.get("attachment_id")
+        if new_attachment_id:
+            image_url = f"/web/image/ir.attachment/{new_attachment_id}/datas"
+        elif attachment_id and (not image_url or "/web/image/ir.attachment/" in str(image_url)):
+            image_url = f"/web/image/ir.attachment/{attachment_id}/datas"
+        resolved.append(
+            {
+                "title": slide.get("title") or old.get("title") or f"Promotie {idx + 1}",
+                "link": slide.get("link") or old.get("link") or "/shop",
+                "image_url": image_url,
+                "attachment_id": attachment_id,
+            }
+        )
+    return resolved
+
+
+def _replace_promo_markup(arch: str, slides: list[dict[str, Any]]) -> str:
+    slides_html = []
+    indicators = []
+    for idx, slide in enumerate(slides):
+        active = " active" if idx == 0 else ""
+        indicator_active = "active" if idx == 0 else ""
+        aria_current = ' aria-current="true"' if idx == 0 else ""
+        img = html.escape(str(slide.get("image_url") or ""), quote=True)
+        link = html.escape(str(slide.get("link") or "/shop"), quote=True)
+        title = html.escape(str(slide.get("title") or f"Promotie {idx + 1}"), quote=True)
+        image_html = f'<img src="{img}" alt="{title}" class="d-block w-100" loading="lazy"/>' if img else ""
+        slides_html.append(
+            f'<div class="carousel-item{active}"><a href="{link}" class="helmat-promo-carousel__link">'
+            f"{image_html}</a></div>"
+        )
+        indicators.append(
+            f'<button type="button" data-bs-target="#helmatPromoCarousel" data-bs-slide-to="{idx}" '
+            f'class="{indicator_active}"{aria_current} aria-label="Slide {idx + 1}"/>'
+        )
+
+    arch, inner_count = re.subn(
+        r'(<div[^>]*class="[^"]*\bcarousel-inner\b[^"]*"[^>]*>).*?(</div>\s*<button[^>]*class="[^"]*\bcarousel-control-prev\b)',
+        r"\1" + "\n".join(slides_html) + r"\2",
+        arch,
+        count=1,
+        flags=re.S,
+    )
+    if inner_count == 0:
+        raise OdooError("Nu am gasit zona carousel-inner pentru reclame.")
+
+    arch = re.sub(
+        r'(<div[^>]*class="[^"]*\bcarousel-indicators\b[^"]*"[^>]*>).*?(</div>)',
+        r"\1" + "\n".join(indicators) + r"\2",
+        arch,
+        count=1,
+        flags=re.S,
+    )
+    return arch
+
+
+def _attachment_id_from_url(url: str | None) -> int | None:
+    if not url:
+        return None
+    match = re.search(r"/web/image/ir\.attachment/(\d+)/", str(url))
+    return int(match.group(1)) if match else None
 
 
 def _friendly_odoo_error(exc: Exception) -> str:

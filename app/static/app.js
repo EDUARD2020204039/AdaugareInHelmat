@@ -1,4 +1,4 @@
-﻿let state = { categories: [], products: [], productIndex: [], promo: [], selectedCategory: null, indexLoaded: false };
+﻿let state = { categories: [], products: [], productIndex: [], promo: [], selectedCategory: null, indexLoaded: false, odooUrl: "" };
 let titleRequestSeq = 0;
 let stockRequestSeq = 0;
 const $ = (id) => document.getElementById(id);
@@ -49,6 +49,7 @@ async function init() {
     const data = await api("/api/bootstrap");
     clearStatus();
     $("dbBadge").textContent = data.db;
+    state.odooUrl = (data.odoo_url || "").replace(/\/$/, "");
     state.categories = data.categories || [];
     state.products = data.products || [];
     state.productIndex = state.products;
@@ -404,7 +405,10 @@ function renderPromo() {
       (s, i) => `<div class="promo-row">
     <label>Titlu<input data-promo-title="${i}" value="${esc(s.title || "")}"></label>
     <label>Link<input data-promo-link="${i}" value="${esc(s.link || "/shop")}"></label>
-    <label>Imagine<input data-promo-file="${i}" type="file" accept="image/*"></label>
+    <label>Imagine<input data-promo-file="${i}" type="file" accept="image/*">
+      <span class="promo-note">${promoImageSrc(s.image_url) ? "Imaginea existenta se pastreaza daca nu alegi alta." : "Alege imagine pentru reclama."}</span>
+      ${promoImageSrc(s.image_url) ? `<img class="promo-thumb" src="${esc(promoImageSrc(s.image_url))}" alt="">` : ""}
+    </label>
   </div>`
     )
     .join("");
@@ -420,11 +424,19 @@ $("promoApplyBtn").onclick = async () => {
   const fd = new FormData();
   fd.append("slides_json", JSON.stringify(readPromo()));
   document.querySelectorAll("[data-promo-file]").forEach((inp) => {
-    if (inp.files[0]) fd.append("images", inp.files[0]);
+    if (inp.files[0]) fd.append("images", inp.files[0], `${inp.dataset.promoFile}__${inp.files[0].name}`);
   });
-  const res = await api("/api/promo/apply", { method: "POST", body: fd });
-  $("promoResult").innerHTML = `<pre>${esc(JSON.stringify(res, null, 2))}</pre>`;
-  toast("Reclame aplicate");
+  $("promoResult").innerHTML = '<div class="mini">Se aplica reclamele pe site...</div>';
+  try {
+    const res = await api("/api/promo/apply", { method: "POST", body: fd });
+    state.promo = res.slides || state.promo;
+    renderPromo();
+    $("promoResult").innerHTML = `<div class="mini">Reclame aplicate pe site. View-uri actualizate: ${esc((res.view_ids || []).join(", "))}</div>`;
+    toast("Reclame aplicate");
+  } catch (err) {
+    $("promoResult").innerHTML = `<div class="mini">Eroare la aplicarea reclamelor: ${esc(err.message)}</div>`;
+    toast("Eroare reclame");
+  }
 };
 
 function readPromo() {
@@ -452,6 +464,12 @@ function stripHtml(html) {
   const div = document.createElement("div");
   div.innerHTML = html || "";
   return div.textContent || div.innerText || "";
+}
+
+function promoImageSrc(src) {
+  if (!src) return "";
+  if (/^https?:\/\//i.test(src)) return src;
+  return state.odooUrl ? state.odooUrl + src : src;
 }
 
 function normalize(s) {
