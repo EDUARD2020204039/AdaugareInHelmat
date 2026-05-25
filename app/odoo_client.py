@@ -232,7 +232,7 @@ class OdooClient:
         return self.call("product.public.category", "create", vals)
 
     def preview(self, draft: ProductDraft) -> dict[str, Any]:
-        current = self.product(draft.product_id) if draft.product_id else self.find_by_sku(draft.sku or "")
+        current = self.product(draft.product_id, include_stock=False) if draft.product_id else self.find_by_sku(draft.sku or "")
         mode = "update" if current else "create"
         category_id = draft.category_id
         warnings: list[str] = []

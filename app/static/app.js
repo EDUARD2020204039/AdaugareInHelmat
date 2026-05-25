@@ -176,6 +176,7 @@ function applyProductToForm(p, withDetails) {
   $("title").value = p.name || "";
   $("sku").value = p.default_code || "";
   $("price").value = p.list_price || "";
+  $("existingImageNote").textContent = p.id ? "Imaginea existenta se pastreaza automat. Incarca o imagine noua doar daca vrei sa o inlocuiesti." : "";
   if (p.stock_qty !== undefined) {
     $("quantity").value = p.stock_qty || 0;
     $("stockSource").textContent = p.stock_source || "Stoc citit din Odoo dupa selectarea produsului";
@@ -333,12 +334,18 @@ $("productForm").onsubmit = async (ev) => {
   const res = await api("/api/apply", { method: "POST", body: fd });
   $("productId").value = res.product.id;
   $("preview").innerHTML =
-    card(res.product) + `<div class="diff">Salvat: ${res.product.action}${res.swan ? "\\nSwan: " + JSON.stringify(res.swan, null, 2) : ""}</div>`;
+    card(res.product) + `<div class="diff">Mod ${res.product.action === "updated" ? "update" : "create"}: succes transmis catre site</div>`;
   toast("Produs salvat");
 };
 
 function renderPreview(res) {
-  $("preview").innerHTML = card(res.proposed) + `<div class="diff">Mod: ${res.mode}\n${res.warnings.join("\n")}\n\nCurent:\n${JSON.stringify(res.current, null, 2)}</div>`;
+  const proposed = {
+    ...res.proposed,
+    image_url: res.current?.image_url || res.proposed.image_urls?.[0] || "",
+    stock_qty: res.current?.stock_qty,
+  };
+  const warnings = (res.warnings || []).length ? `<div class="diff">${esc(res.warnings.join("\n"))}</div>` : "";
+  $("preview").innerHTML = card(proposed) + `<div class="diff">Mod ${res.mode}: succes la preview</div>` + warnings;
 }
 
 function card(p) {
