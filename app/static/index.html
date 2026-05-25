@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Adaugare in Helmat</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <strong>Adaugare in Helmat</strong>
+      <span id="dbBadge">helmat1</span>
+    </div>
+    <nav>
+      <button data-tab="manual" class="active">Manual</button>
+      <button data-tab="excel">Excel</button>
+      <button data-tab="site">Site</button>
+      <button data-tab="promo">Reclame</button>
+      <button id="syncSwanBtn">Sincronizare Swan</button>
+    </nav>
+  </header>
+
+  <main>
+    <aside>
+      <div class="panel">
+        <h2>Categorii existente</h2>
+        <input id="categorySearch" placeholder="Cauta categorie">
+        <div id="categoryList" class="list"></div>
+      </div>
+      <div class="panel">
+        <h2>Produse</h2>
+        <input id="productSearch" placeholder="Scrie titlul sau codul">
+        <div id="productList" class="list"></div>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <section id="tab-manual" class="tab active">
+        <div class="grid two">
+          <form id="productForm" class="panel">
+            <h1>Produs</h1>
+            <input type="hidden" id="productId">
+            <label>Titlu<input id="title" required></label>
+            <label>Cod / SKU<input id="sku"></label>
+            <div class="grid two">
+              <label>Pret<input id="price" type="number" step="0.01"></label>
+              <label>Cantitate<input id="quantity" type="number" step="0.01"></label>
+            </div>
+            <label>Categorie existenta<select id="categoryId"></select></label>
+            <label>Categorie noua<input id="categoryName" placeholder="Se creeaza doar daca nu alegi una existenta"></label>
+            <label>Descriere scurta<textarea id="shortDescription"></textarea></label>
+            <label>Descriere site<textarea id="description" rows="7"></textarea></label>
+            <label>URL imagini<textarea id="imageUrls" placeholder="Cate un URL pe linie"></textarea></label>
+            <label>Imagini din calculator<input id="images" type="file" multiple accept="image/*"></label>
+            <div class="checks">
+              <label><input id="publish" type="checkbox" checked> Publicat pe site</label>
+              <label><input id="syncToSwan" type="checkbox"> Trimite produs nou si spre Swan</label>
+            </div>
+            <div class="actions">
+              <button type="button" id="previewBtn">Preview site</button>
+              <button type="submit">Adauga / salveaza</button>
+            </div>
+          </form>
+
+          <div class="panel">
+            <h1>Preview</h1>
+            <div id="preview" class="preview empty">Alege sau scrie un produs, apoi apasa Preview.</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-excel" class="tab">
+        <div class="panel">
+          <h1>Import Excel</h1>
+          <input id="excelFile" type="file" accept=".xlsx,.xlsm">
+          <div class="actions">
+            <button id="excelPreviewBtn">Previzualizeaza</button>
+            <button id="excelApplyBtn">Importa in Odoo</button>
+          </div>
+          <div id="excelResult" class="results"></div>
+        </div>
+      </section>
+
+      <section id="tab-site" class="tab">
+        <div class="panel">
+          <h1>Import dupa site</h1>
+          <label>URL pagina produs sau catalog<input id="siteUrl"></label>
+          <label>Coduri Swan / Odoo<textarea id="siteCodes" rows="6" placeholder="Optional, cate un cod pe linie"></textarea></label>
+          <button id="siteScrapeBtn">Cauta si coreleaza</button>
+          <div id="siteResult" class="results"></div>
+        </div>
+      </section>
+
+      <section id="tab-promo" class="tab">
+        <div class="panel">
+          <h1>Reclame homepage</h1>
+          <div id="promoSlides"></div>
+          <div class="actions">
+            <button id="promoSaveBtn">Salveaza local</button>
+            <button id="promoApplyBtn">Aplica pe site</button>
+          </div>
+          <div id="promoResult" class="results"></div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <div id="toast"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
