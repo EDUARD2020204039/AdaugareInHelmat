@@ -21,16 +21,20 @@
     </nav>
   </header>
 
+  <div id="statusBox" class="status hidden"></div>
+
   <main>
     <aside>
       <div class="panel">
         <h2>Categorii existente</h2>
         <input id="categorySearch" placeholder="Cauta categorie">
+        <div id="categoryCount" class="mini">Se incarca...</div>
         <div id="categoryList" class="list"></div>
       </div>
       <div class="panel">
         <h2>Produse</h2>
         <input id="productSearch" placeholder="Scrie titlul sau codul">
+        <div id="productCount" class="mini">Se incarca...</div>
         <div id="productList" class="list"></div>
       </div>
     </aside>
@@ -41,7 +45,10 @@
           <form id="productForm" class="panel">
             <h1>Produs</h1>
             <input type="hidden" id="productId">
-            <label>Titlu<input id="title" required></label>
+            <label class="suggest-wrap">Titlu
+              <input id="title" required autocomplete="off" placeholder="Scrie ca pe site, alegi din sugestii sau introduci produs nou">
+              <div id="titleSuggestions" class="suggest-box hidden"></div>
+            </label>
             <label>Cod / SKU<input id="sku"></label>
             <div class="grid two">
               <label>Pret<input id="price" type="number" step="0.01"></label>

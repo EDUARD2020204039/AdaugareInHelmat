@@ -44,7 +44,7 @@ def health() -> dict:
 @app.get("/api/bootstrap")
 def bootstrap(_: None = Depends(require_admin), client: OdooClient = Depends(odoo)) -> dict:
     categories = client.categories()
-    products = client.products(limit=20)
+    products = client.products(limit=120)
     return {
         "odoo_url": settings.odoo_url,
         "db": settings.odoo_db,
@@ -61,8 +61,8 @@ def categories(_: None = Depends(require_admin), client: OdooClient = Depends(od
 
 
 @app.get("/api/products")
-def products(q: str = "", _: None = Depends(require_admin), client: OdooClient = Depends(odoo)) -> list:
-    return client.products(q, limit=80)
+def products(q: str = "", limit: int = 120, _: None = Depends(require_admin), client: OdooClient = Depends(odoo)) -> list:
+    return client.products(q, limit=max(1, min(limit, 500)))
 
 
 @app.get("/api/products/{product_id}")
