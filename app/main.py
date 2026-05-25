@@ -83,8 +83,13 @@ def product_index(_: None = Depends(require_admin), client: OdooClient = Depends
 
 
 @app.get("/api/products/{product_id}")
-def product(product_id: int, _: None = Depends(require_admin), client: OdooClient = Depends(odoo)) -> dict:
-    return client.product(product_id)
+def product(
+    product_id: int,
+    include_stock: bool = False,
+    _: None = Depends(require_admin),
+    client: OdooClient = Depends(odoo),
+) -> dict:
+    return client.product(product_id, include_stock=include_stock)
 
 
 @app.get("/api/product-stocks")

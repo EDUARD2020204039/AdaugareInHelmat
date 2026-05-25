@@ -124,7 +124,7 @@ function renderProducts(products = state.products) {
   if (!products.length) {
     $("productList").innerHTML = '<div class="mini">Scrie minim 2 caractere ca sa caut in produsele de pe site.</div>';
   }
-  document.querySelectorAll("[data-product]").forEach((el) => (el.onclick = () => loadProduct(Number(el.dataset.product))));
+  document.querySelectorAll("[data-product]").forEach((el) => (el.onclick = () => loadProduct(Number(el.dataset.product), findIndexedProduct(Number(el.dataset.product)))));
 }
 
 async function loadProductIndex() {
@@ -158,20 +158,56 @@ function localProductSearch(query, limit = 40) {
   return scored.sort((a, b) => b[0] - a[0] || String(a[1].name).localeCompare(String(b[1].name))).slice(0, limit).map((row) => row[1]);
 }
 
-async function loadProduct(id) {
+async function loadProduct(id, seed = null) {
   titleRequestSeq += 1;
   hideSuggestions();
-  const p = await api("/api/products/" + id);
+  if (seed) {
+    applyProductToForm({ ...seed, stock_qty: undefined }, false);
+    hydrateSelectedStock(id);
+  }
+  const p = await api("/api/products/" + id + "?include_stock=false");
+  applyProductToForm(p, true);
+  hydrateSelectedStock(id);
+  toast("Produs incarcat");
+}
+
+function applyProductToForm(p, withDetails) {
   $("productId").value = p.id;
   $("title").value = p.name || "";
   $("sku").value = p.default_code || "";
   $("price").value = p.list_price || "";
-  $("quantity").value = p.stock_qty || 0;
-  $("stockSource").textContent = p.stock_source || "Stoc citit din Odoo dupa selectarea produsului";
+  if (p.stock_qty !== undefined) {
+    $("quantity").value = p.stock_qty || 0;
+    $("stockSource").textContent = p.stock_source || "Stoc citit din Odoo dupa selectarea produsului";
+  } else if (!withDetails) {
+    $("quantity").value = "";
+    $("stockSource").textContent = "Se incarca stocul Odoo...";
+  }
   $("categoryId").value = (p.public_categ_ids && p.public_categ_ids[0]) || "";
-  $("description").value = stripHtml(p.website_description || p.description_sale || "");
+  if (withDetails) $("description").value = stripHtml(p.website_description || p.description_sale || "");
   $("preview").innerHTML = card(p);
-  toast("Produs incarcat");
+}
+
+async function hydrateSelectedStock(id) {
+  try {
+    const data = await api("/api/product-stocks?ids=" + id);
+    const qty = data.stocks && data.stocks[String(id)];
+    if ($("productId").value !== String(id)) return;
+    $("quantity").value = qty ?? 0;
+    $("stockSource").textContent = data.source || "Odoo stock.quant";
+    const current = {
+      id,
+      name: $("title").value,
+      default_code: $("sku").value,
+      list_price: num($("price").value),
+      stock_qty: qty ?? 0,
+      image_url: `/api/products/${id}/image`,
+      description: $("description").value,
+    };
+    $("preview").innerHTML = card(current);
+  } catch {
+    if ($("productId").value === String(id)) $("stockSource").textContent = "Stoc indisponibil";
+  }
 }
 
 $("categorySearch").addEventListener("input", renderCategories);
@@ -215,7 +251,7 @@ $("titleSuggestions").addEventListener("pointerdown", (ev) => {
   ev.preventDefault();
   ev.stopPropagation();
   hideSuggestions();
-  loadProduct(Number(item.dataset.suggestProduct));
+  loadProduct(Number(item.dataset.suggestProduct), findIndexedProduct(Number(item.dataset.suggestProduct)));
 });
 
 function renderTitleSuggestions(products) {
@@ -391,6 +427,10 @@ function num(v) {
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+}
+
+function findIndexedProduct(id) {
+  return state.productIndex.find((p) => Number(p.id) === Number(id)) || state.products.find((p) => Number(p.id) === Number(id)) || null;
 }
 
 function stripHtml(html) {

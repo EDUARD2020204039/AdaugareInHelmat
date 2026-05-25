@@ -63,7 +63,7 @@ class OdooClient:
         return sorted(rows, key=lambda r: r["full_name"].lower())
 
     def products(self, query: str = "", limit: int = 50, include_stock: bool = False) -> list[dict[str, Any]]:
-        domain: list[Any] = [("sale_ok", "=", True)]
+        domain: list[Any] = [("sale_ok", "=", True), ("website_published", "=", True)]
         if query:
             domain += ["|", "|", ("name", "ilike", query), ("default_code", "ilike", query), ("barcode", "ilike", query)]
         rows = self.search_read(
@@ -82,7 +82,7 @@ class OdooClient:
     def product_index(self, limit: int = 20000) -> list[dict[str, Any]]:
         rows = self.search_read(
             "product.template",
-            [("sale_ok", "=", True)],
+            [("sale_ok", "=", True), ("website_published", "=", True)],
             ["id", "name", "default_code", "list_price", "public_categ_ids", "website_published"],
             limit=limit,
             order="name",
@@ -91,7 +91,7 @@ class OdooClient:
             row["image_url"] = f"/api/products/{row['id']}/image"
         return rows
 
-    def product(self, product_id: int) -> dict[str, Any]:
+    def product(self, product_id: int, include_stock: bool = True) -> dict[str, Any]:
         rows = self.search_read(
             "product.template",
             [("id", "=", product_id)],
@@ -112,8 +112,9 @@ class OdooClient:
             raise OdooError(f"Produsul {product_id} nu exista")
         row = rows[0]
         row["image_url"] = f"/api/products/{row['id']}/image"
-        row["stock_qty"] = self.stock_for_template(row["id"])
-        row["stock_source"] = f"Odoo stock.quant, locatia {settings.odoo_stock_location_name}"
+        if include_stock:
+            row["stock_qty"] = self.stock_for_template(row["id"])
+            row["stock_source"] = f"Odoo stock.quant, locatia {settings.odoo_stock_location_name}"
         return row
 
     def find_by_sku(self, sku: str) -> dict[str, Any] | None:
