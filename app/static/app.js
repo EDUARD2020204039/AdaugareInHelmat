@@ -169,8 +169,7 @@ async function loadProduct(id) {
   $("quantity").value = p.stock_qty || 0;
   $("stockSource").textContent = p.stock_source || "Stoc citit din Odoo dupa selectarea produsului";
   $("categoryId").value = (p.public_categ_ids && p.public_categ_ids[0]) || "";
-  $("shortDescription").value = p.description_sale || "";
-  $("description").value = p.website_description || "";
+  $("description").value = stripHtml(p.website_description || p.description_sale || "");
   $("preview").innerHTML = card(p);
   toast("Produs incarcat");
 }
@@ -210,6 +209,14 @@ $("title").addEventListener("keydown", (ev) => {
 document.addEventListener("click", (ev) => {
   if (!ev.target.closest(".suggest-wrap")) hideSuggestions();
 });
+$("titleSuggestions").addEventListener("pointerdown", (ev) => {
+  const item = ev.target.closest("[data-suggest-product]");
+  if (!item) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  hideSuggestions();
+  loadProduct(Number(item.dataset.suggestProduct));
+});
 
 function renderTitleSuggestions(products) {
   const box = $("titleSuggestions");
@@ -227,12 +234,6 @@ function renderTitleSuggestions(products) {
     )
     .join("");
   box.classList.remove("hidden");
-  document
-    .querySelectorAll("[data-suggest-product]")
-    .forEach((el) => (el.onclick = () => {
-      hideSuggestions();
-      loadProduct(Number(el.dataset.suggestProduct));
-    }));
   hydrateSuggestionStocks(products.map((p) => p.id));
 }
 
@@ -270,7 +271,7 @@ function draft() {
     category_id: num($("categoryId").value),
     category_name: $("categoryName").value.trim() || null,
     description: $("description").value,
-    short_description: $("shortDescription").value,
+    short_description: $("description").value,
     price: num($("price").value),
     quantity: num($("quantity").value),
     image_urls: $("imageUrls").value.split(/\n+/).map((x) => x.trim()).filter(Boolean),
@@ -390,6 +391,12 @@ function num(v) {
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+}
+
+function stripHtml(html) {
+  const div = document.createElement("div");
+  div.innerHTML = html || "";
+  return div.textContent || div.innerText || "";
 }
 
 function normalize(s) {

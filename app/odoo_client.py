@@ -74,7 +74,7 @@ class OdooClient:
             order="name",
         )
         for row in rows:
-            row["image_url"] = f"{self.url}/web/image/product.template/{row['id']}/image_1920"
+            row["image_url"] = f"/api/products/{row['id']}/image"
             if include_stock:
                 row["stock_qty"] = self.stock_for_template(row["id"])
         return rows
@@ -111,7 +111,7 @@ class OdooClient:
         if not rows:
             raise OdooError(f"Produsul {product_id} nu exista")
         row = rows[0]
-        row["image_url"] = f"{self.url}/web/image/product.template/{row['id']}/image_1920"
+        row["image_url"] = f"/api/products/{row['id']}/image"
         row["stock_qty"] = self.stock_for_template(row["id"])
         row["stock_source"] = f"Odoo stock.quant, locatia {settings.odoo_stock_location_name}"
         return row
@@ -130,7 +130,7 @@ class OdooClient:
             return None
         rows[0]["stock_qty"] = self.stock_for_template(rows[0]["id"])
         rows[0]["stock_source"] = f"Odoo stock.quant, locatia {settings.odoo_stock_location_name}"
-        rows[0]["image_url"] = f"{self.url}/web/image/product.template/{rows[0]['id']}/image_1920"
+        rows[0]["image_url"] = f"/api/products/{rows[0]['id']}/image"
         return rows[0]
 
     def stock_for_template(self, product_tmpl_id: int) -> float:
@@ -181,11 +181,23 @@ class OdooClient:
         return result
 
     def product_image(self, product_tmpl_id: int) -> tuple[bytes, str] | None:
-        rows = self.search_read("product.template", [("id", "=", product_tmpl_id)], ["image_512"], limit=1)
-        if not rows or not rows[0].get("image_512"):
+        rows = self.search_read("product.template", [("id", "=", product_tmpl_id)], ["image_512", "image_1920", "product_variant_id"], limit=1)
+        if not rows:
+            return None
+        image_b64 = rows[0].get("image_512") or rows[0].get("image_1920")
+        if not image_b64 and rows[0].get("product_variant_id"):
+            variant_id = rows[0]["product_variant_id"][0]
+            variants = self.search_read("product.product", [("id", "=", variant_id)], ["image_512", "image_1920"], limit=1)
+            if variants:
+                image_b64 = variants[0].get("image_512") or variants[0].get("image_1920")
+        if not image_b64:
+            extras = self.search_read("product.image", [("product_tmpl_id", "=", product_tmpl_id)], ["image_512", "image_1920"], limit=1)
+            if extras:
+                image_b64 = extras[0].get("image_512") or extras[0].get("image_1920")
+        if not image_b64:
             return None
         try:
-            data = base64.b64decode(rows[0]["image_512"])
+            data = base64.b64decode(image_b64)
         except (binascii.Error, TypeError):
             return None
         return data, _guess_image_mimetype(data)
@@ -243,9 +255,8 @@ class OdooClient:
             vals["default_code"] = draft.sku.strip()
         if draft.price is not None:
             vals["list_price"] = float(draft.price)
-        if draft.short_description:
-            vals["description_sale"] = draft.short_description
         if draft.description:
+            vals["description_sale"] = draft.description
             vals["website_description"] = draft.description
         if category_id:
             vals["public_categ_ids"] = [(6, 0, [category_id])]
