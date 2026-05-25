@@ -117,6 +117,15 @@ def product_image(product_id: int, client: OdooClient = Depends(odoo)) -> Respon
     return Response(content=data, media_type=mimetype, headers={"Cache-Control": "public, max-age=3600"})
 
 
+@app.get("/api/promo/image/{attachment_id}")
+def promo_image(attachment_id: int, client: OdooClient = Depends(odoo)) -> Response:
+    image = client.attachment_image(attachment_id)
+    if not image:
+        raise HTTPException(status_code=404, detail="Reclama fara imagine")
+    data, mimetype = image
+    return Response(content=data, media_type=mimetype, headers={"Cache-Control": "public, max-age=3600"})
+
+
 @app.get("/api/swan/stock/{sku}")
 def swan_stock(sku: str, _: None = Depends(require_admin)) -> dict:
     item = SwanClient().by_sku(sku)

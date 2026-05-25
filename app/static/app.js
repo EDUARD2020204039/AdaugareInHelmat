@@ -468,6 +468,8 @@ function stripHtml(html) {
 
 function promoImageSrc(src) {
   if (!src) return "";
+  const attachmentMatch = String(src).match(/\/web\/image\/ir\.attachment\/(\d+)\//);
+  if (attachmentMatch) return `/api/promo/image/${attachmentMatch[1]}`;
   if (/^https?:\/\//i.test(src)) return src;
   return state.odooUrl ? state.odooUrl + src : src;
 }

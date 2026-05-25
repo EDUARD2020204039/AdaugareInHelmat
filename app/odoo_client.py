@@ -205,6 +205,16 @@ class OdooClient:
             return None
         return data, _guess_image_mimetype(data)
 
+    def attachment_image(self, attachment_id: int) -> tuple[bytes, str] | None:
+        rows = self.search_read("ir.attachment", [("id", "=", attachment_id)], ["datas", "mimetype"], limit=1)
+        if not rows or not rows[0].get("datas"):
+            return None
+        try:
+            data = base64.b64decode(rows[0]["datas"])
+        except (binascii.Error, TypeError):
+            return None
+        return data, rows[0].get("mimetype") or _guess_image_mimetype(data)
+
     def stock_location_id(self) -> int:
         rows = self.search_read(
             "stock.location",
