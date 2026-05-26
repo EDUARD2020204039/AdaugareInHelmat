@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Adaugare in Helmat</title>
-  <link rel="stylesheet" href="/static/app.css?v=20260526-1">
+  <link rel="stylesheet" href="/static/app.css?v=20260526-2">
 </head>
 <body>
   <header class="topbar">
@@ -48,6 +48,7 @@
             <input type="hidden" id="productId">
             <label class="suggest-wrap">Titlu
               <input id="title" required autocomplete="off" placeholder="Scrie ca pe site, alegi din sugestii sau introduci produs nou">
+              <span id="productPublishStatus" class="field-note"></span>
               <div id="titleSuggestions" class="suggest-box hidden"></div>
             </label>
             <label>Cod / SKU<input id="sku"></label>
@@ -114,6 +115,6 @@
   </main>
 
   <div id="toast"></div>
-  <script src="/static/app.js?v=20260526-1"></script>
+  <script src="/static/app.js?v=20260526-2"></script>
 </body>
 </html>

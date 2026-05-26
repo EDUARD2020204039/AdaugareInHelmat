@@ -181,6 +181,7 @@ async function loadProduct(id, seed = null) {
 function applyProductToForm(p, withDetails) {
   $("productId").value = p.swan_only ? "" : p.id;
   $("title").value = p.name || "";
+  $("productPublishStatus").textContent = publishStatusText(p);
   $("sku").value = p.default_code || "";
   $("price").value = p.list_price || "";
   $("existingImageNote").textContent = p.swan_only
@@ -239,6 +240,7 @@ const titleSearch = debounce(async () => {
   const q = $("title").value.trim();
   const seq = ++titleRequestSeq;
   $("productId").value = "";
+  $("productPublishStatus").textContent = "";
   if (q.length < 2) {
     hideSuggestions();
     return;
@@ -504,6 +506,12 @@ function promoImageSrc(src) {
   if (attachmentMatch) return `/api/promo/image/${attachmentMatch[1]}`;
   if (/^https?:\/\//i.test(src)) return src;
   return state.odooUrl ? state.odooUrl + src : src;
+}
+
+function publishStatusText(p) {
+  if (p.swan_only) return "Produs din Swan: nu este inca publicat pe site.";
+  if (!p.id) return "";
+  return p.website_published ? "Produs publicat pe site." : "Produs nepublicat pe site.";
 }
 
 function normalize(s) {
