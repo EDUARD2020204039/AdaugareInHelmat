@@ -6,6 +6,8 @@ import requests
 from .models import ProductDraft, SwanProduct
 from .settings import settings
 
+_SWAN_PRODUCTS_CACHE: dict = {"at": 0.0, "products": []}
+
 
 class SwanClient:
     def configured(self) -> bool:
@@ -42,14 +44,28 @@ class SwanClient:
             )
         return products
 
+    def fetch_products_cached(self, ttl_seconds: int = 300) -> list[SwanProduct]:
+        now = datetime.now().timestamp()
+        products = _SWAN_PRODUCTS_CACHE.get("products") or []
+        if products and now - float(_SWAN_PRODUCTS_CACHE.get("at") or 0) < ttl_seconds:
+            return products
+        products = self.fetch_products()
+        _SWAN_PRODUCTS_CACHE["products"] = products
+        _SWAN_PRODUCTS_CACHE["at"] = now
+        return products
+
+    def by_skus(self, skus: list[str], cached: bool = True) -> dict[str, SwanProduct]:
+        wanted = {sku.strip().upper() for sku in skus if sku and sku.strip()}
+        if not wanted:
+            return {}
+        products = self.fetch_products_cached() if cached else self.fetch_products()
+        return {item.sku.strip().upper(): item for item in products if item.sku.strip().upper() in wanted}
+
     def by_sku(self, sku: str) -> SwanProduct | None:
         sku = (sku or "").strip()
         if not sku:
             return None
-        for item in self.fetch_products():
-            if item.sku == sku:
-                return item
-        return None
+        return self.by_skus([sku]).get(sku.upper())
 
     def push_product(self, draft: ProductDraft, odoo_product_id: int | None = None) -> dict:
         if not settings.swan_push_api_url:

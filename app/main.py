@@ -109,7 +109,28 @@ def product_stocks(
         except ValueError:
             continue
     product_ids = product_ids[:50]
-    return {"stocks": client.stocks_for_templates(product_ids), "source": "Odoo stock.quant, locatia WH/Stock"}
+    odoo_stocks = client.stocks_for_templates(product_ids)
+    stocks = dict(odoo_stocks)
+    sources = {str(product_id): "Odoo WH/Stock" for product_id in product_ids}
+
+    products = client.search_read(
+        "product.template",
+        [("id", "in", product_ids)],
+        ["id", "default_code"],
+        limit=len(product_ids) or 1,
+    )
+    sku_by_id = {str(product["id"]): str(product.get("default_code") or "").strip() for product in products}
+    swan = SwanClient()
+    if swan.configured():
+        swan_items = swan.by_skus(list(sku_by_id.values()))
+        for product_id, sku in sku_by_id.items():
+            item = swan_items.get(sku.upper())
+            if item:
+                stocks[product_id] = item.quantity
+                sources[product_id] = f"Swan dupa SKU {item.sku}"
+
+    source = "Swan dupa SKU, fallback Odoo WH/Stock" if any(src.startswith("Swan") for src in sources.values()) else "Odoo stock.quant, locatia WH/Stock"
+    return {"stocks": stocks, "sources": sources, "source": source}
 
 
 @app.get("/api/products/{product_id}/image")
@@ -309,7 +330,7 @@ def _merge_swan_index(products: list[dict]) -> list[dict]:
     try:
         existing_skus = {str(product.get("default_code") or "").strip().upper() for product in products}
         swan_only = []
-        for item in swan.fetch_products():
+        for item in swan.fetch_products_cached():
             sku = item.sku.strip()
             if not sku or sku.upper() in existing_skus:
                 continue

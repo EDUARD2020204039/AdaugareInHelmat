@@ -40,6 +40,8 @@ Aplicatia ruleaza automat zilnic la `03:00 Europe/Bucharest` sincronizarea Swan 
 
 Pentru produsele gasite dupa SKU/cod, sincronizarea actualizeaza pretul si stocul in Odoo. Produsele care exista in Swan, dar nu sunt gasite in Odoo, raman in raportul `missing`.
 
+In interfata, stocul afisat in formular si in sugestii prefera Swan dupa SKU. Daca Swan nu este configurat sau SKU-ul nu este gasit in Swan, aplicatia foloseste fallback-ul Odoo `WH/Stock`.
+
 ## Excel
 
 Coloane acceptate: `cod`, `sku`, `product_code`, `titlu`, `name`, `descriere`, `description`, `pret`, `price`, `cantitate`, `quantity`, `categorie`, `category`, `brand`, `image_url`.

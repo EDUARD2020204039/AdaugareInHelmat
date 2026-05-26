@@ -206,14 +206,16 @@ async function hydrateSelectedStock(id) {
     const data = await api("/api/product-stocks?ids=" + id);
     const qty = data.stocks && data.stocks[String(id)];
     if ($("productId").value !== String(id)) return;
+    const source = data.sources?.[String(id)] || data.source || "Odoo WH/Stock";
     $("quantity").value = qty ?? 0;
-    $("stockSource").textContent = data.source || "Odoo stock.quant";
+    $("stockSource").textContent = source;
     const current = {
       id,
       name: $("title").value,
       default_code: $("sku").value,
       list_price: num($("price").value),
       stock_qty: qty ?? 0,
+      stock_source: source,
       image_url: `/api/products/${id}/image`,
       description: $("description").value,
     };
@@ -302,7 +304,8 @@ async function hydrateSuggestionStocks(ids) {
     if (seq !== stockRequestSeq) return;
     for (const [id, qty] of Object.entries(data.stocks || {})) {
       document.querySelectorAll(`[data-suggest-stock="${id}"]`).forEach((el) => {
-        el.textContent = `stoc Odoo ${qty}`;
+        const source = data.sources?.[String(id)] || data.source || "Odoo WH/Stock";
+        el.textContent = `${source.startsWith("Swan") ? "stoc Swan" : "stoc Odoo"} ${qty}`;
       });
     }
   } catch {
@@ -373,9 +376,10 @@ function renderPreview(res) {
 
 function card(p) {
   const img = p.image_url || p.image_urls?.[0] || "";
+  const stockLabel = p.stock_source ? p.stock_source.replace(" dupa SKU", "") : "Stoc";
   return `<div class="product-card">${img ? `<img src="${esc(img)}">` : ""}<div class="body"><h3>${esc(
     p.name || p.title || ""
-  )}</h3><div class="price">${p.list_price ?? p.price ?? ""} lei</div><p>${p.stock_qty !== undefined ? "Stoc Odoo: " + p.stock_qty : ""}</p><div>${
+  )}</h3><div class="price">${p.list_price ?? p.price ?? ""} lei</div><p>${p.stock_qty !== undefined ? esc(stockLabel) + ": " + p.stock_qty : ""}</p><div>${
     p.website_description || p.description || ""
   }</div></div></div>`;
 }
