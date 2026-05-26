@@ -296,9 +296,40 @@ def _get_product_index(client: OdooClient) -> list[dict]:
     if products and now - float(_PRODUCT_INDEX_CACHE.get("at") or 0) < _PRODUCT_INDEX_TTL:
         return products
     products = client.product_index()
+    products = _merge_swan_index(products)
     _PRODUCT_INDEX_CACHE["products"] = products
     _PRODUCT_INDEX_CACHE["at"] = now
     return products
+
+
+def _merge_swan_index(products: list[dict]) -> list[dict]:
+    swan = SwanClient()
+    if not swan.configured():
+        return products
+    try:
+        existing_skus = {str(product.get("default_code") or "").strip().upper() for product in products}
+        swan_only = []
+        for item in swan.fetch_products():
+            sku = item.sku.strip()
+            if not sku or sku.upper() in existing_skus:
+                continue
+            swan_only.append(
+                {
+                    "id": f"swan:{sku}",
+                    "name": item.name or sku,
+                    "default_code": sku,
+                    "list_price": item.price,
+                    "public_categ_ids": [],
+                    "website_published": False,
+                    "stock_qty": item.quantity,
+                    "image_url": "",
+                    "source": "swan",
+                    "swan_only": True,
+                }
+            )
+        return products + swan_only
+    except Exception:
+        return products
 
 
 def _promo_upload_index(filename: str, fallback: int) -> int:

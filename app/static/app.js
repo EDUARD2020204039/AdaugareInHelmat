@@ -124,9 +124,9 @@ function renderProducts(products = state.products) {
     )
     .join("");
   if (!products.length) {
-    $("productList").innerHTML = '<div class="mini">Scrie minim 2 caractere ca sa caut in produsele de pe site.</div>';
+    $("productList").innerHTML = '<div class="mini">Scrie minim 2 caractere ca sa caut in catalogul complet.</div>';
   }
-  document.querySelectorAll("[data-product]").forEach((el) => (el.onclick = () => loadProduct(Number(el.dataset.product), findIndexedProduct(Number(el.dataset.product)))));
+  document.querySelectorAll("[data-product]").forEach((el) => (el.onclick = () => loadProduct(el.dataset.product, findIndexedProduct(el.dataset.product))));
 }
 
 async function loadProductIndex() {
@@ -163,6 +163,11 @@ function localProductSearch(query, limit = 40) {
 async function loadProduct(id, seed = null) {
   titleRequestSeq += 1;
   hideSuggestions();
+  if (seed?.swan_only) {
+    applyProductToForm(seed, true);
+    toast("Produs preluat din Swan. Alege categoria si salveaza pentru a-l adauga pe site.");
+    return;
+  }
   if (seed) {
     applyProductToForm({ ...seed, stock_qty: undefined }, false);
     hydrateSelectedStock(id);
@@ -174,14 +179,18 @@ async function loadProduct(id, seed = null) {
 }
 
 function applyProductToForm(p, withDetails) {
-  $("productId").value = p.id;
+  $("productId").value = p.swan_only ? "" : p.id;
   $("title").value = p.name || "";
   $("sku").value = p.default_code || "";
   $("price").value = p.list_price || "";
-  $("existingImageNote").textContent = p.id ? "Imaginea existenta se pastreaza automat. Incarca o imagine noua doar daca vrei sa o inlocuiesti." : "";
+  $("existingImageNote").textContent = p.swan_only
+    ? "Produs din Swan. Adauga imagine daca vrei sa apara pe site."
+    : p.id
+    ? "Imaginea existenta se pastreaza automat. Incarca o imagine noua doar daca vrei sa o inlocuiesti."
+    : "";
   if (p.stock_qty !== undefined) {
     $("quantity").value = p.stock_qty || 0;
-    $("stockSource").textContent = p.stock_source || "Stoc citit din Odoo dupa selectarea produsului";
+    $("stockSource").textContent = p.stock_source || (p.swan_only ? "Stoc citit din Swan" : "Stoc citit din Odoo dupa selectarea produsului");
   } else if (!withDetails) {
     $("quantity").value = "";
     $("stockSource").textContent = "Se incarca stocul Odoo...";
@@ -254,7 +263,7 @@ $("titleSuggestions").addEventListener("pointerdown", (ev) => {
   ev.preventDefault();
   ev.stopPropagation();
   hideSuggestions();
-  loadProduct(Number(item.dataset.suggestProduct), findIndexedProduct(Number(item.dataset.suggestProduct)));
+  loadProduct(item.dataset.suggestProduct, findIndexedProduct(item.dataset.suggestProduct));
 });
 
 function renderTitleSuggestions(products) {
@@ -268,12 +277,14 @@ function renderTitleSuggestions(products) {
     .map(
       (p) => `<div class="suggest-item" data-suggest-product="${p.id}">
     <img src="${esc(p.image_url || "")}" alt="" onerror="this.style.visibility='hidden'">
-    <span><strong>${esc(p.name)}</strong><small>${esc(p.default_code || "fara cod")} - pret ${p.list_price ?? ""} - <span data-suggest-stock="${p.id}">stoc...</span></small></span>
+    <span><strong>${esc(p.name)}</strong><small>${esc(p.default_code || "fara cod")} - ${p.swan_only ? "Swan" : p.website_published ? "pe site" : "nepublicat"} - pret ${
+        p.list_price ?? ""
+      } - <span data-suggest-stock="${p.id}">${p.swan_only ? "stoc Swan " + (p.stock_qty ?? 0) : "stoc..."}</span></small></span>
   </div>`
     )
     .join("");
   box.classList.remove("hidden");
-  hydrateSuggestionStocks(products.map((p) => p.id));
+  hydrateSuggestionStocks(products.filter((p) => !p.swan_only).map((p) => p.id));
 }
 
 function hideSuggestions() {
@@ -478,7 +489,7 @@ function esc(s) {
 }
 
 function findIndexedProduct(id) {
-  return state.productIndex.find((p) => Number(p.id) === Number(id)) || state.products.find((p) => Number(p.id) === Number(id)) || null;
+  return state.productIndex.find((p) => String(p.id) === String(id)) || state.products.find((p) => String(p.id) === String(id)) || null;
 }
 
 function stripHtml(html) {

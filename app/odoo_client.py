@@ -65,7 +65,7 @@ class OdooClient:
         return sorted(rows, key=lambda r: r["full_name"].lower())
 
     def products(self, query: str = "", limit: int = 50, include_stock: bool = False) -> list[dict[str, Any]]:
-        domain: list[Any] = [("sale_ok", "=", True), ("website_published", "=", True)]
+        domain: list[Any] = [("sale_ok", "=", True)]
         if query:
             domain += ["|", "|", ("name", "ilike", query), ("default_code", "ilike", query), ("barcode", "ilike", query)]
         rows = self.search_read(
@@ -84,13 +84,14 @@ class OdooClient:
     def product_index(self, limit: int = 20000) -> list[dict[str, Any]]:
         rows = self.search_read(
             "product.template",
-            [("sale_ok", "=", True), ("website_published", "=", True)],
+            [("sale_ok", "=", True)],
             ["id", "name", "default_code", "list_price", "public_categ_ids", "website_published"],
             limit=limit,
             order="name",
         )
         for row in rows:
             row["image_url"] = f"/api/products/{row['id']}/image"
+            row["source"] = "odoo"
         return rows
 
     def product(self, product_id: int, include_stock: bool = True) -> dict[str, Any]:
