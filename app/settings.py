@@ -13,9 +13,9 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 5005
 
-    odoo_url: str = "https://hello.helpan.ro"
-    odoo_db: str = "helmat1"
-    odoo_user: str = "managehaba@gmail.com"
+    odoo_url: str = ""
+    odoo_db: str = ""
+    odoo_user: str = ""
     odoo_password: str = ""
     odoo_stock_location_name: str = "WH/Stock"
 

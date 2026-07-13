@@ -6,3 +6,8 @@ uploads/
 data/*.json
 dist/
 build/
+*.py[cod]
+*.pyo
+*.db
+*.sqlite
+*.sqlite3
